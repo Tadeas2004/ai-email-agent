@@ -4,12 +4,16 @@ from datetime import datetime
 
 
 def init_db():
+    """
+    Initializes the SQLite database and creates the emails table 
+    if it does not already exist.
+    """
     conn = sqlite3.connect("emails.db")
     cursor = conn.cursor()
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS emails (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            gmail_id TEXT UNIQUE,  -- added UNIQUE constraint to prevent duplicates
+            gmail_id TEXT UNIQUE,
             email TEXT,
             summary TEXT,
             category TEXT,
@@ -30,7 +34,7 @@ def init_db():
     conn.close()
 
 def is_email_processed(gmail_id: str) -> bool:
-    """Checks if this email has already been analyzed."""
+    """Checks if this email has already been analyzed and stored."""
     conn = sqlite3.connect("emails.db")
     cursor = conn.cursor()
     cursor.execute("SELECT 1 FROM emails WHERE gmail_id = ?", (gmail_id,))
@@ -39,12 +43,26 @@ def is_email_processed(gmail_id: str) -> bool:
     return exists
 
 def save_email(gmail_id: str, email: str, result: dict):
+    """
+    Saves the normalized AI analysis results into the SQLite database.
+    Handles defensive type checking for schema robustness.
+    """
     conn = sqlite3.connect("emails.db")
     cursor = conn.cursor()
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    priority = result.get("priority", {})
     
-    # Using INSERT OR IGNORE just in case
+    # Extract priority level and reason safely from the normalized dictionary
+    priority_field = result.get("priority", "low")
+    if isinstance(priority_field, dict):
+        priority_level = priority_field.get("level", "low")
+        priority_reason = priority_field.get("reason", "No reason provided.")
+    else:
+        priority_level = str(priority_field)
+        priority_reason = result.get("priority_reason", "No reason provided.")
+
+    # Extract actions/action_items list safely
+    actions_list = result.get("actions") or result.get("action_items") or []
+
     cursor.execute("""
         INSERT OR IGNORE INTO emails (
             gmail_id, email, summary, category, priority, priority_reason,
@@ -57,9 +75,9 @@ def save_email(gmail_id: str, email: str, result: dict):
         email,
         result.get("summary", ""),
         result.get("category", ""),
-        priority.get("level", ""),
-        priority.get("reason", ""),
-        json.dumps(result.get("action_items", [])),
+        priority_level,
+        priority_reason,
+        json.dumps(actions_list),
         result.get("confidence", 0.0),
         result.get("sentiment", ""),
         result.get("actionability", ""),
@@ -74,6 +92,7 @@ def save_email(gmail_id: str, email: str, result: dict):
 
 
 def get_history(limit: int = 20) -> list[dict]:
+    """Fetches past email analysis records sorted by the latest timestamp."""
     conn = sqlite3.connect("emails.db")
     conn.row_factory = sqlite3.Row
     cursor = conn.cursor()
@@ -82,6 +101,7 @@ def get_history(limit: int = 20) -> list[dict]:
     """, (limit,))
     rows = [dict(row) for row in cursor.fetchall()]
     conn.close()
+    
     for row in rows:
         try:
             row["actions"] = json.loads(row["actions"])
@@ -96,7 +116,7 @@ def get_history(limit: int = 20) -> list[dict]:
     return rows
 
 def get_latest_email_record() -> dict | None:
-    """Vrátí úplně poslední přidaný záznam z databáze jako klasický slovník, nebo None."""
+    """Returns the single most recently added database record as a dictionary."""
     conn = sqlite3.connect("emails.db")
     conn.row_factory = sqlite3.Row
     cursor = conn.cursor()

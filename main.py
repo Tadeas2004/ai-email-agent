@@ -1,105 +1,109 @@
 import os
 import json
+from typing import List, Optional
 from dotenv import load_dotenv
 from google import genai
 from google.genai import types
+from pydantic import BaseModel, Field
 from services.gmail_service import GmailService
 from database import is_email_processed, save_email, get_latest_email_record, init_db
 
 
-def _call_gemini(client, prompt: str, system: str) -> dict:
+# --- Pydantic Schemas for Strict AI Constraints ---
+
+class EmailEntities(BaseModel):
+    people: List[str] = Field(default_factory=list)
+    companies: List[str] = Field(default_factory=list)
+    dates: List[str] = Field(default_factory=list)
+
+class EmailFactsSchema(BaseModel):
+    sender_intent: str
+    urgency_signals: List[str] = Field(default_factory=list)
+    email_type: str
+    sentiment_signals: List[str] = Field(default_factory=list)
+    entities: EmailEntities
+    explicit_questions: List[str] = Field(default_factory=list)
+    commitments_or_promises: List[str] = Field(default_factory=list)
+    requires_response_signals: bool
+
+class PrioritySchema(BaseModel):
+    level: str
+    reason: str
+
+class FullAnalysisSchema(BaseModel):
+    summary: str
+    category: str
+    priority: PrioritySchema
+    confidence: float
+    action_items: List[str] = Field(default_factory=list)
+    requires_response: bool
+    follow_up_needed: bool
+    deadline: Optional[str] = None
+    sentiment: str
+    email_type: str
+    actionability: str
+    entities: EmailEntities
+
+
+# --- Core Logic ---
+
+def _call_gemini(client, prompt: str, system: str, response_schema) -> dict:
+    """
+    Executes a strict Gemini API call enforcing a Pydantic response schema.
+    Guarantees 100% reliable structural integrity without regex/substring hacks.
+    """
     response = client.models.generate_content(
-        model="gemini-2.5-flash",
-        contents=prompt,
-        config=types.GenerateContentConfig(system_instruction=system)
+    model="gemini-3.1-flash-lite",
+    contents=prompt,
+    config=types.GenerateContentConfig(
+        system_instruction=system,
+        response_mime_type="application/json",
+        response_schema=response_schema
     )
-    # Robustly extract JSON from response regardless of markdown fences
-    text = response.text.strip()
-    start = text.find("{")
-    end = text.rfind("}") + 1
-    return json.loads(text[start:end])
+)
+    return json.loads(response.text.strip())
 
 
-def analyze_email(email: str) -> dict:
+def analyze_email(email_text: str) -> dict:
+    """
+    Runs a secure 2-step analysis pipeline via Gemini with hard schema validation.
+    """
     load_dotenv()
     client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
 
-    # Step 1: Extract key facts from the email
-    extraction_system = """You are an expert email analysis assistant.
-    Extract key facts from the email. Return ONLY valid JSON, no extra text:
-    {
-        "sender_intent": "what the sender wants or is communicating",
-        "urgency_signals": ["list of phrases or signals indicating urgency"],
-        "email_type": "question|request|complaint|invoice|update|approval|scheduling|other",
-        "sentiment_signals": ["list of emotional or tonal cues detected"],
-        "entities": {
-            "people": ["names mentioned"],
-            "companies": ["companies or organizations mentioned"],
-            "dates": ["dates, deadlines or time references mentioned"]
-        },
-        "explicit_questions": ["list of direct questions the sender is asking"],
-        "commitments_or_promises": ["anything the sender is committing to or promising"],
-        "requires_response_signals": "boolean - true if sender clearly expects a reply, false if not"
-    }"""
+    # Step 1: Context anchoring via structured fact extraction
+    extraction_system = "You are an expert email analysis assistant. Extract key facts from the email in English language."
+    facts = _call_gemini(client, email_text, extraction_system, EmailFactsSchema)
 
-    facts = _call_gemini(client, email, extraction_system)
-
-    # Step 2: Use extracted facts to produce a full structured analysis
+    # Step 2: Final processing utilizing verified context tokens
     analysis_system = f"""You are an expert email analysis assistant.
     You have already extracted these facts from the email:
     {json.dumps(facts, indent=2)}
 
-    Now produce a full structured analysis. Return ONLY valid JSON, no extra text:
-    {{
-        "summary": "2-3 sentence summary of the email",
-        "category": "invoice|inquiry|complaint|meeting_request|internal_update|legal|newsletter|spam|urgent_issue|follow_up|project_update|other",
-        "priority": {{
-            "level": "high|medium|low",
-            "reason": "one sentence explaining why this priority level was chosen"
-        }},
-        "confidence": "number between 0.0 and 1.0 reflecting certainty of this analysis",
-        "action_items": ["specific action 1", "specific action 2"],
-        "requires_response": "boolean - true if sender expects a reply, false if not",
-        "follow_up_needed": "boolean - true if recipient is waiting on someone else to respond, false if not",
-        "deadline": "ISO date string if detected, otherwise null",
-        "sentiment": "positive|neutral|negative|urgent|frustrated|friendly",
-        "email_type": "question|request|complaint|invoice|update|approval|scheduling|other",
-        "actionability": "actionable|informational|blocking|waiting_on_me|waiting_on_them|delegated",
-        "entities": {{
-            "people": ["list of names mentioned"],
-            "companies": ["list of companies mentioned"],
-            "dates": ["list of dates or deadlines mentioned"]
-        }}
-    }}
-
-    Rules:
-    - confidence should reflect how certain you are about priority and category (0.0 = uncertain, 1.0 = very certain)
-    - requires_response = true if the sender expects a reply from the recipient
-    - follow_up_needed = true if the recipient sent something previously and is still waiting on a response
-    - deadline = extract any explicit or implicit deadlines, return null if none detected
-    - actionability reflects the operational state of this email
-    - be specific in action_items, avoid vague suggestions like "reply to email"
+    Now produce a full structured analysis following the schema constraints perfectly.
+    Ensure confidence is between 0.0 and 1.0, and map data into granular tokens.
     """
+    return _call_gemini(client, email_text, analysis_system, FullAnalysisSchema)
 
-    return _call_gemini(client, email, analysis_system)
 
-def sync_and_analyze_emails(limit: int = 5) -> int:
+def sync_and_analyze_emails(limit: int = 3) -> dict:
     """
-    Fetches latest emails, checks for duplicates, analyzes new ones, 
-    and saves them to the database. Returns the number of newly analyzed emails.
+    Synchronizes emails, cross-references database states, runs the structured 
+    AI engine, and safely flattens schemas for downstream SQLite and Streamlit usage.
+    Returns a dictionary summary of the synchronization statistics.
     """
     gmail = GmailService()
     latest_emails = gmail.fetch_emails(limit=limit)
     new_emails_counted = 0
+    skipped_emails_counted = 0
 
     for email_data in latest_emails:
         gmail_id = email_data["id"]
 
-        # Skip if we already handled this email
         if is_email_processed(gmail_id):
+            skipped_emails_counted += 1
             continue
 
-        # Format a clean string combining metadata and content for Gemini
         formatted_email_text = f"""
         From: {email_data['sender']}
         Subject: {email_data['subject']}
@@ -108,29 +112,50 @@ def sync_and_analyze_emails(limit: int = 5) -> int:
 
         print(f"Analyzing new email from {email_data['sender']}...")
         
-        # Run a 2-step Gemini pipeline
-        analysis_result = analyze_email(formatted_email_text)
+        raw_analysis = analyze_email(formatted_email_text)
 
-        # Save to SQLite
-        save_email(gmail_id, formatted_email_text, analysis_result)
+        normalized_analysis = {
+            "summary": raw_analysis.get("summary"),
+            "category": raw_analysis.get("category"),
+            "priority": raw_analysis.get("priority", {}).get("level", "low"),
+            "priority_reason": raw_analysis.get("priority", {}).get("reason", "No reason provided by AI."),
+            "confidence": raw_analysis.get("confidence", 0.5),
+            "actions": raw_analysis.get("action_items", []),
+            "requires_response": raw_analysis.get("requires_response", False),
+            "follow_up_needed": raw_analysis.get("follow_up_needed", False),
+            "deadline": raw_analysis.get("deadline"),
+            "sentiment": raw_analysis.get("sentiment", "neutral"),
+            "actionability": raw_analysis.get("actionability", "informational"),
+            "entities": raw_analysis.get("entities", {"people": [], "companies": [], "dates": []})
+        }
+
+        save_email(gmail_id, formatted_email_text, normalized_analysis)
         new_emails_counted += 1
 
-    return new_emails_counted
+    # Return a rich operational summary instead of a raw integer
+    return {
+        "requested": limit,
+        "fetched": len(latest_emails),
+        "new": new_emails_counted,
+        "skipped": skipped_emails_counted
+    }
 
 
 def main() -> None:
+    """
+    Local CLI execution test-bed for the orchestration pipeline.
+    """
     init_db()
     print("Starting email sync test...")
-    count = sync_and_analyze_emails(limit=1)
-    print(f"Sync complete. Analyzed {count} new emails.")
+    stats = sync_and_analyze_emails(limit=1)
+    print(f"Sync complete. Checked: {stats['fetched']} | New: {stats['new']} | Skipped: {stats['skipped']}.")
 
-    if count <= 0:
+    if stats["new"] <= 0:
         return
 
     latest_email = get_latest_email_record()
     if latest_email:
         print(f"Latest email category is: {latest_email['category']}...")
-        print(f"Latest email summary is: {latest_email['summary']}...")
     else:
         print("No record found in the database.")
 

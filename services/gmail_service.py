@@ -83,8 +83,8 @@ class GmailService:
                 
                 # Extract headers for a more professional input for Gemini
                 headers = full_msg.get('payload', {}).get('headers', [])
-                subject = next((h['value'] for h in headers if h['name'] == 'Subject'), 'No Subject')
-                sender = next((h['value'] for h in headers if h['name'] == 'From'), 'Unknown Sender')
+                subject = next((h['value'] for h in headers if h['name'].lower() == 'subject'), 'No Subject')
+                sender = next((h['value'] for h in headers if h['name'].lower() == 'from'), 'Unknown Sender')
 
                 email_data.append({
                     "id": msg['id'],
@@ -106,28 +106,28 @@ class GmailService:
         """
         mock_data = [
             {
-                "id": "mock_msg_enfusion_001",
-                "sender": "devops-alerts@bohemia-net.internal",
-                "subject": "CRITICAL: Enfusion Engine Build Pipeline Blocked - Core Dump Detected",
-                "snippet": "Alert triggered at 15:42 UTC. The automated nightly build for branch main failed on Linux target. Segmentation fault occurred during shader pre-compilation step in render_backend_v2.cpp. This is currently blocking 14 developers from merging features. Immediate engineering review required."
+            "id": "mock_1",
+            "sender": "sandbox.developer@example.com",
+            "subject": "Enfusion Engine - Dev Team Update",
+            "snippet": "Ahoj, posílám update k integraci skriptů. V nové verzi Enfusion Enginu jsme optimalizovali refaktorizaci herní smyčky a paměťové pooly pro stabilnější renderování textur na Macu."
             },
             {
-                "id": "mock_msg_aws_002",
-                "sender": "billing@aws-amazon.com",
-                "subject": "Amazon Web Services Invoice Available - Account 4920-XXXX",
-                "snippet": "Your monthly AWS invoice for April 2026 is now available online. Total balance due: $14,250.42. This charge will be automatically processed via your primary payment method on file on May 18, 2026. Please review the Cost Explorer dashboard for regional server allocation breakdown."
+                "id": "mock_2",
+                "sender": "qa.testing.bot@example.com",
+                "subject": "DayZ Stability Crash Report - Build #4092",
+                "snippet": "CRITICAL ERROR: Server crash detected on Chernarus-12. Exception in memory management during entity serialization. Prosim o urgentni review logu, patch specha."
             },
             {
-                "id": "mock_msg_feedback_003",
-                "sender": "michal.klinec@bohemia.cz",
-                "subject": "Community Feedback Summary - DayZ Patch 1.26 Stability Issues",
-                "snippet": "Hey Tadeas, I reviewed the player forums regarding yesterday's patch release. There is a small uptick in complaints about multiplayer desync and inventory duplication lag on European public servers. It is not breaking the core game, but we should schedule a quick sync tomorrow to discuss hotfix priorities."
+                "id": "mock_3",
+                "sender": "hr.demo@example.com",
+                "subject": "Informatics Internship - Tadeas Mutina",
+                "snippet": "Dobrý den, posíláme potvrzení o přijetí vaší přihlášky na pozici vývojáře. Váš projektový repozitář s AI agentem v Dockeru předáváme týmu k technickému review."
             },
             {
-                "id": "mock_msg_player_004",
-                "sender": "frustrated-gamer99@gmail.com",
-                "subject": "REFUND REQUEST: Lost all my inventory items due to server crash!!",
-                "snippet": "I am demanding a full refund or restore of my digital items! I spent 40 hours looting on Server EU-03 and the server randomly crashed at 16:10 today. When I logged back in, my character was completely wiped. This is unacceptable, fix your game or I want my money back immediately!!"
+                "id": "mock_4",
+                "sender": "marketing.automation@example.com",
+                "subject": "Web Analytics and Tracking Setup Complete",
+                "snippet": "Ahoj, GTM (Google Tag Manager) i GA4 tracking tagy jsou nasazené na produkční landing page. Konverze z Meta Ads se už správně propisují do databáze."
             }
         ]
         return mock_data[:limit]
