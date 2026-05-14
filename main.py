@@ -9,7 +9,7 @@ from database import is_email_processed, save_email, get_latest_email_record, in
 
 def _call_gemini(client, prompt: str, system: str) -> dict:
     response = client.models.generate_content(
-        model="gemini-2.5-flash-lite",
+        model="gemini-2.5-flash",
         contents=prompt,
         config=types.GenerateContentConfig(system_instruction=system)
     )
