@@ -1,6 +1,6 @@
 # ✉️ AI Email Agent: Secure Orchestration Pipeline
 
-An intelligent Gmail orchestration system that performs structured two-step analysis on incoming communications using **Google Gemini 2.0 Flash Lite**. The agent converts raw email threads into actionable data points through a high-fidelity reasoning chain.
+An intelligent Gmail orchestration system that performs structured two-step analysis on incoming communications using **Google Gemini 3.1 Flash Lite**. The agent converts raw email threads into actionable data points through a high-fidelity reasoning chain.
 
 ## 🔗 Live Demo
 
@@ -41,7 +41,7 @@ The mock data layer lets recruiters and reviewers evaluate the AI's analytical d
 
 | Layer              | Technology                                              |
 | ------------------ | ------------------------------------------------------- |
-| **LLM**            | Google Gemini 2.0 Flash Lite (500 RPD tier)             |
+| **LLM**            | **Google Gemini 3.1 Flash Lite** (High-throughput tier) |
 | **Frontend**       | Streamlit + Atomic HTML/CSS Component Rendering         |
 | **Logic**          | Python 3.12, Pydantic (type safety & schema validation) |
 | **Database**       | SQLite (relational persistence & deduplication)         |
@@ -88,7 +88,7 @@ streamlit run app.py    # Launches the dashboard
 
 ## 🧠 Strategic Decisions
 
-**Model selection** — migrated to Gemini 2.0 Flash Lite to leverage expanded daily quotas (500 RPD) and its superior performance in structured JSON extraction compared to earlier model versions.
+**Model selection** — migrated to **Gemini 3.1 Flash Lite** to leverage the latest advancements in long-context window efficiency and superior performance in structured JSON extraction compared to previous model iterations.
 
 **Defensive programming** — implemented a normalisation layer in the database service to safely handle edge cases where the LLM returns inconsistent data types, preventing silent schema failures downstream.
 
